@@ -1,0 +1,370 @@
+---
+title: "TRABAJO MODELOS"
+author: "Amparo Gálvez Vilar, Lidia Moreno Marín y Lucía Carro Arcaya"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, echo = FALSE, warning=FALSE, cache=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(pROC)
+library(boot)
+library(ggplot2)
+```
+
+# DESCRIPCIÓN DEL BANCO DE DATOS
+
+El Cuestionario Estudiantil Global de Bienestar (CEGB) es un estudio escolar que emplea un formulario autoadministrado para recolectar información sobre el estado de salud de los jóvenes y los elementos de prevención vinculados a las causas principales de enfermedades y muertes.
+
+El sondeo fue efectuado en Argentina en el año 2018. Un total de 56.981 alumnos participaron en él. En total tenemos 18 variables, en un principio utilizaremos todas para sacar conclusiones.
+
+
+# OBJETIVOS DEL ESTUDIO
+
+Desarrollar un modelo que nos permita predecir el bullying a partir de las variables del dataset. Antes de esto, realizaremos un análisis de las variables que más influyen en el bullying.
+
+Vamos a ver los porcentajes de bullying en función de la edad, teniendo en cuenta también en el modelo otras variables como si se sentían solos, el sexo y la situación familiar.
+
+Nuestra variable respuesta será el bullying, variable de tipo factor que nos indica si hay o no bullying.
+
+Realizamos el estudio a partir de estas variables ya que sacar conclusiones de estos aspectos puede darnos información relevante sobre la sociedad actual.
+
+# PREPARACIÓN DE LOS DATOS
+
+Importamos y cargamos los datos archivo csv:
+
+```{r}
+bullying <- read_delim("Bullying_2018.csv", delim = ";", escape_double = FALSE, trim_ws = TRUE)
+bullying<-drop_na(bullying)
+```
+
+Quitamos del dataframe las vaiables que no son útiles:
+
+```{r}
+bullying <- bullying %>% select(-record, -Bullied_not_on_school_property_in_past_12_months,
+                                -Most_of_the_time_or_always_felt_lonely, 
+                                -Miss_school_no_permission)
+```
+
+Convertimos las variables de tipo character a tipo factor:
+
+```{r}
+names(bullying)[1] <- 'Bullying'
+
+bullying$Bullying <- as.factor(bullying$Bullying)
+levels(bullying$Bullying) <- c("0", "1")
+
+bullying$Cyber_bullied_in_past_12_months <- as.factor(bullying$Cyber_bullied_in_past_12_months)
+
+bullying$Sex <- as.factor(bullying$Sex)
+
+bullying$Physically_attacked <- as.factor(bullying$Physically_attacked)
+
+bullying$Physical_fighting <- as.factor(bullying$Physical_fighting)
+
+bullying$Felt_lonely <- as.factor(bullying$Felt_lonely)
+
+bullying$Close_friends <-  as.factor(bullying$Close_friends)
+
+bullying$Other_students_kind_and_helpful <- as.factor(bullying$Other_students_kind_and_helpful)
+
+bullying$Parents_understand_problems <- as.factor(bullying$Parents_understand_problems)
+
+bullying$Missed_classes_or_school_without_permission <- as.factor(
+  bullying$Missed_classes_or_school_without_permission)
+```
+
+Convertimos la columna edad a númerica:
+
+```{r}
+bullying <- bullying %>% mutate(Custom_Age = as.numeric(gsub("[^0-9]", "", Custom_Age)))
+```
+
+Contruimos la variable peso:
+
+```{r}
+bullying$Were_underweight <- as.factor(bullying$Were_underweight)
+bullying$Were_overweight <- as.factor(bullying$Were_overweight)
+bullying$Were_obese <- as.factor(bullying$Were_obese)
+
+peso <- rep("Normal", 32938)
+
+under <- bullying$Were_underweight == 'Yes'
+under <- which(under)
+
+for (i in under){
+  peso[i] = 'BajoPeso'
+}
+
+over <- bullying$Were_overweight == 'Yes'
+over <- which(over)
+
+for (i in over){
+  peso[i] = 'SobrePeso'
+}
+
+obese <- bullying$Were_obese == 'Yes'
+obese <- which(obese)
+
+for (i in obese){
+  peso[i] = 'Obeso'
+}
+
+bullying$Peso <- as.factor(peso)
+
+bullying <- bullying %>% select(-Were_obese, -Were_overweight, -Were_underweight)
+```
+
+Antes que nada vamos a visualizar manera gráfica el número de niños que sufren bullying de nuestro banco de datos, esto lo tendremos en cuenta para analizar los resultados obtenidos.
+
+```{r}
+prop_table_bullying <- prop.table(table(bullying$Bullying)) * 100
+print(prop_table_bullying)
+# Podemos hablar del porcentaje
+
+ggplot(bullying, aes(x = "", fill = Bullying)) +
+  geom_bar(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Proporción de niños que sufren bullying",
+       fill = "Bullying",
+       x = NULL,
+       y = NULL) +
+  theme_void()
+```
+
+# SELECCIÓN DEL MODELO
+
+Trabajeremos con los modelos y sacaremos las conlcuisones a partir de el grupo de entrenamienot y el grupo de prueba.
+
+```{r echo = FALSE}
+# ENTRENAMIENTO
+train <- rep(TRUE,32938)  
+train[sample(32938, 9500)] <- FALSE
+
+# PRUEBA
+held.out <- bullying[!train,] 
+dim(held.out)
+held.out.B <- bullying$Bullying[!train]
+```
+
+
+Sabiendo que nuestra variable respuesta es categórica vamos a utilizar el modelo de regresión logistica múltiple, dado que esta modela la probabilidad de que nuestra variable pertenezca a una categoría en particular.
+
+Vamos a relalizar dos modelos utilizando diferentes grupos de variables para ver cual de los dos funcionará mejor.
+
+El primer modelo lo realizaremos en base a las variables que nos parecen más relevantes, y el segundo a partir de la función step.
+
+## MODELO 1:
+
+```{r}
+modelo1 <- glm(Bullying ~ Custom_Age + Peso + Close_friends, 
+               data = bullying, family = binomial)
+step(modelo1)
+```
+
+Sabemos que cuanto menor sea el AIC mejor es nuestro modelo. Por tanto, observando la función step, el mejor modelo posible es no quitar ninguna variable, ya que obtenemos el menor AIC.
+
+```{r}
+summary(modelo1)
+```
+
+Con la función summary vemos la variables respuesta, en nuestro caso 'Bullying' que puede tener dos valores (0 o 1), con las covariables 'Custom_Age', 'Peso' y 'Close_friends'.
+
+En la columna "Estimate" encontramos los coeficientes estimados para cada variable predictora. Por ejemplo, el coeficiente estimado para "Custom_Age" es -0.10594. Esto indica que, manteniendo constantes las otras variables, se espera que un aumento de una unidad en "Custom_Age" esté asociado con una disminución en las probabilidades de experimentar bullying.
+
+Vemos los parámetros significativos cuando la columna "Pr(\>\|z\|)" presentan un valor pequeño de p (generalmente \< 0.05). Por ejemplo los coeficinetes de edad, tener 2 mejores amigos y tener 3 o más mejores amigos tienen valores p muy pequeños, lo que significa que son significativos.
+
+### PREDICCIONES
+
+A continuación, realizamos las predicciones del modelo, estas nos dirán si el modelo está bien ajustado y que probabilidad de acierto tiene.
+
+```{r}
+modelo_entren <- glm(Bullying ~ Custom_Age + Peso + Close_friends, 
+               data = bullying, family = binomial, subset = train)
+
+n2.prob <- predict(modelo_entren, held.out, type="response")
+```
+
+```{r}
+modelo_entren.pred <- rep("0_NoBullying", 9500)
+
+modelo_entren.pred[n2.prob > 0.5] <- "1_YesBullying"
+
+(tt<-table(held.out.B, modelo_entren.pred))
+```
+
+Este modelo no nos ayuda a llegar a la conclusión que queremos obtener, ya que vemos que no predice que ningún niño sufra bullying. 
+
+Esto se debe a que las probabilidades predichas en función a nuestro modelo son todas más pequeñas que 0.5, que es el rango que hemos definido. Por lo tanto, vemos que las variables elegidas no influyen lo suficiente para que el modelo sea bueno.  
+
+## MODELO 2:
+
+```{r}
+modelo2 <- glm(Bullying ~ Cyber_bullied_in_past_12_months + 
+                 Custom_Age + Sex + Physically_attacked + 
+                 Physical_fighting + Felt_lonely + Close_friends + 
+                 Other_students_kind_and_helpful + Parents_understand_problems + 
+                 Missed_classes_or_school_without_permission + Peso , 
+               data=bullying, family = binomial)
+
+step(modelo2)
+```
+
+Este modelo nos genera muchas variables explicativas, por tanto, vamos a seleccionar las 4 con el menor AIC, ya que un valor AIC más bajo indica un mejor ajuste.
+
+```{r}
+modelo3 <- glm(Bullying ~ Other_students_kind_and_helpful + Physically_attacked + 
+                 Felt_lonely + Cyber_bullied_in_past_12_months, 
+               data = bullying, family = binomial)
+
+step(modelo3)
+
+summary(modelo3)
+```
+
+La variabale respuesta de este modelo vulve a ser Bullying, las covariables son "Other_students_kind_and_helpful", "Physically_attacked", "Felt_lonely" y "Cyber_bullied_in_past_12_months".
+
+En la columna "Estimate" encontramos los coeficientes estimados para cada variable predictora. Por ejemplo: "Other_students_kind_and_helpfulMost of the time" es 0.14170. Esto indica que, manteniendo constantes las otras variables, se espera que los individuos que informaron que otros estudiantes son amables y serviciales "la mayoría del tiempo" tengan un aumento en el logaritmo de las probabilidades de experimentar bullying.
+
+Los parámetros más significativos de este algoritmo son "Other_students_kind_and_helpful" cuando es "Never", "Other_students_kind_and_helpful" cuando es "Rarely" y "Cyber_bullied_in_past_12_months" cuando si que ocurre.
+
+### PREDICCIONES
+
+```{r}
+modelo_entren <- glm(Bullying ~ Other_students_kind_and_helpful +
+                 Physically_attacked + 
+                 Felt_lonely +
+                 Cyber_bullied_in_past_12_months, 
+               data = bullying, family = binomial, subset = train)
+
+n2.prob <- predict(modelo_entren, held.out, type="response")
+```
+
+```{r}
+modelo_entren.pred <- rep("0_NoBullying", 9500)
+
+modelo_entren.pred[n2.prob > 0.5] <- "1_YesBullying"
+
+(tt<-table(held.out.B, modelo_entren.pred))
+```
+
+Los elementos de la diagonal principal de la matriz de confusión indican las predicciones correctas que se han obtenido. Por tanto, el modelo ha predecido correctamente que se sufre bullying 7298 y que no se sufre 307, en total 7605 predicciones correctas.
+
+```{r}
+# ESPECIFIDAD:
+spe<-tt[1,1]/sum(tt[1,])
+# SENSIBILIDAD:
+sen<-tt[2,2]/sum(tt[2,])
+
+cat('Sensibilidad:',sen,'\nEspecificidad:',spe)
+tot<-(tt[1,1] + tt[2,2]) / sum(tt)
+cat('\nBien clasificados (Bayes):',round(100*tot,2),'%')
+```
+
+La sensibilidad nos indica la probabilidad de un si en una persona que relamente sufre bullying, en este caso hay una probabilidad de 0.161.
+
+La especificidad es la probabilidad de un en una persona que no sufra bullying, en este caso hay una probabilidad de 0.97.
+
+La regressió logística predice correctamente el sufrir bullying / no sufrir del 80.05% de los datos de prueba.
+
+#### CURVA ROC
+
+```{r}
+curv_roc <- roc(held.out.B, n2.prob)
+
+yi<-coords(curv_roc, "best")
+par(pty="s")
+plot(curv_roc,xlim=c(1,0))
+points(spe,sen,col='blue')
+text(spe,sen,'p=0.5',col='blue',pos='4')
+points(yi[2],yi[3],col='red')
+text(yi[2],yi[3],paste('p*=',round(yi[1],3)),col='red',pos='2')
+text(0,0.1,paste('AUC=',round(curv_roc$auc,3)),pos=2)
+text(0,0,paste('95% CI:',round(ci(curv_roc)[1],3),'-',round(ci(curv_roc)[3],3)),pos=2)
+```
+
+El punto de corte de la curva ROC que representa el punto de corte óptimo para la suma de sensibilidad y especificidad tiene valor 0.171 (punto rojo).
+
+En el gráfico vemos que el área bajo de la curva vale 0.73 y el intervalo de confianza del 95% tiene un valor de 0.717-0742. Tener un AUC cerca de 1 significa que el modelo es bueno.
+
+#### ERROR DE PREDICCIÓN
+
+```{r}
+mesura.error <- function(x,y) mean(abs(x-y)>0.5)*100 
+
+ecm <- cv.glm(bullying, modelo3, cost = mesura.error, K=10)
+
+ecm$delta
+```
+
+El porcentaje de predicciones incorrectas ha sido del 20.25%.
+
+
+## GRÁFICOS
+
+```{r}
+orden = c('Always', 'Most of the time', 'Sometimes', 'Rarely', 'Never')
+bullying$Other_students_kind_and_helpful <- factor(bullying$Other_students_kind_and_helpful, 
+                                                   levels = orden)
+ggplot(bullying, aes(x = Bullying, fill = Other_students_kind_and_helpful)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Relación entre bullying y los compañeros",
+       x = "Bullying",
+       y = "Frecuencia", fill ='') 
+```
+
+```{r}
+orden = c('12 or more times', '10 or 11 times', '8 or 9 times', '6 or 7 times', 
+          '4 or 5 times', '2 or 3 times', '1 time', '0 times')
+bullying$Physically_attacked <- factor(bullying$Physically_attacked, levels = orden)
+ggplot(bullying, aes(x = Bullying, fill = Physically_attacked)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Relación entre bullying y peleas físicas",
+       x = "Bullying",
+       y = "Frecuencia", fill ='') 
+
+```
+```{r}
+filtrado <- bullying %>% filter(Physically_attacked == c('2 or 3 times', '4 or 5 times', 
+                                                        '6 or 7 times', 
+                                                        '8 or 9 times', '10 or 11 times', 
+                                                        '12 or more times'))
+ggplot(filtrado, aes(x = Bullying, fill = Physically_attacked)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Relación entre bullying y peleas físicas con zoom",
+       x = "Bullying",
+       y = "Frecuencia", fill ='') 
+```
+
+
+
+```{r}
+
+orden = c('Always', 'Most of the time', 'Sometimes', 'Rarely', 'Never')
+bullying$Felt_lonely <- factor(bullying$Felt_lonely, levels = orden)
+
+ggplot(bullying, aes(x = Bullying, fill = Felt_lonely)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Relación entre bullying y el sentimiento de soledad",
+       x = "Bullying",
+       y = "Frecuencia", fill ='')
+```
+
+```{r}
+ggplot(bullying, aes(x = Bullying, fill = Cyber_bullied_in_past_12_months)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Relación entre bullying y el ciberbullying",
+       x = "Bullying",
+       y = "Frecuencia", fill ='') 
+```
+
+
+
