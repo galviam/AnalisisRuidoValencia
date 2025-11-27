@@ -1,0 +1,371 @@
+---
+title: "Prueba"
+author: "Andreu Cantó Belda"
+date: "2024-04-22"
+output: html_document
+---
+
+```{r}
+library(readxl)
+archivo_excel <- "datos/recetas.xlsx"
+
+# Cargar la primera hoja del archivo Excel
+recetas <- read_excel(archivo_excel)
+recetas$id = 1:dim(recetas)[1]
+```
+
+
+```{r}
+nutr <- recetas[,c(5,4)]
+nutr$informacion_nutricional[1]
+```
+```{r}
+# Importar el paquete necesario
+library(stringr)
+
+# Lista de cadenas de texto con información nutricional
+lista_texto <- c(
+  "['calorías (kcal): 416', 'grasa (fat): 18g', 'hidratos de carbono (carbs): 36g', 'proteínas (protein): 26g']",
+  "['calorías (kcal): 250', 'grasa (fat): 10g', 'hidratos de carbono (carbs): 30g', 'proteínas (protein): 15g']"
+  # Añade más cadenas de texto según sea necesario
+)
+
+# Inicializa un data.frame vacío para almacenar los valores
+df_nutricional <- data.frame(
+  kcal = numeric(),
+  grasa = numeric(),
+  carbohidratos = numeric(),
+  proteinas = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Procesa cada cadena de texto de la lista
+for (texto in nutr$informacion_nutricional) {
+    # Limpia la cadena de texto
+    texto <- str_remove_all(texto, "\\[|\\]")
+    texto_limpio <- str_trim(texto)
+    
+    # Inicializa un vector para almacenar los valores extraídos
+    valores <- c(kcal = NA, grasa = NA, carbohidratos = NA, proteinas = NA)
+    
+    # Divide la cadena de texto en pares clave-valor
+    pares <- strsplit(texto_limpio, ",")[[1]]
+    pares <- str_trim(pares)
+    
+    # Procesa cada par clave-valor
+    for (par in pares) {
+        # Divide el par en clave y valor
+        partes <- strsplit(par, ":")[[1]]
+        clave <- str_trim(partes[1])
+        valor <- str_trim(partes[2])
+        
+        # Asigna el valor a la clave correspondiente
+        if (clave == "'calorías (kcal)") {
+            valores["kcal"] <- as.numeric(sub("'", "", valor))
+        } else if (clave == "'grasa (fat)") {
+            # Elimina la 'g' del final y convierte a número
+            valores["grasa"] <- as.numeric(sub("g'", "", valor))
+        } else if (clave == "'hidratos de carbono (carbs)") {
+            # Elimina la 'g' del final y convierte a número
+            valores["carbohidratos"] <- as.numeric(sub("g'", "", valor))
+        } else if (clave == "'proteínas (protein)") {
+            # Elimina la 'g' del final y convierte a número
+            valores["proteinas"] <- as.numeric(sub("g'", "", valor))
+        }
+    }
+    
+    # Añade los valores extraídos como una fila al `data.frame`
+    df_nutricional <- rbind(df_nutricional, valores)
+}
+
+# Imprimir el `data.frame` final
+print(df_nutricional)
+```
+```{r}
+df_nutricional$id <- 1:dim(df_nutricional)[1]
+```
+
+```{r}
+df_nutricional <- na.omit(df_nutricional)
+recetas <- recetas[df_nutricional$id,]
+```
+
+```{r}
+df_nutricional$id <- 1:dim(df_nutricional)[1]
+recetas$id <- 1:dim(recetas)[1]
+names(df_nutricional) <- (c("Kcal", "Grasa", "Carbohidratos", "Proteinas", "id"))
+```
+
+```{r}
+sexo <- 0 # 0 hombre
+peso_kg <- 75
+altura_cm <- 170
+edad_años <- 35
+objetivo <- 0 #  0 Aumentar masa muscular
+nivel_actividad <- 1.2 # 1.2 bajo, 1.55 medio, 1.725 alto
+
+if (sexo == 0) {
+  TMB <- (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_años) + 5
+} else {
+  TMB <- (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_años) - 161
+}
+
+# Calcular el GET
+GET <- TMB * nivel_actividad
+
+# Ajustar GET según el objetivo
+if (objetivo == 0) {
+  calorias_objetivo <- GET + 300  # Añadir un superávit de 300 calorías
+} else {
+  calorias_objetivo <- GET - 300  # Aplicar un déficit de 300 calorías
+}
+
+# Establecer gramaje de proteínas por kilogramo de peso corporal según el objetivo
+if (objetivo == 0) {
+  proteinas_por_kg <- 1.6  # Puedes ajustar entre 1.6 - 2.2 según el objetivo
+} else {
+  proteinas_por_kg <- 1.2  # Puedes ajustar entre 1.2 - 2.0 según el objetivo
+}
+
+# Calcular proteínas totales en gramos
+proteinas_totales <- peso_kg * proteinas_por_kg
+
+# Calcular calorías de proteínas
+calorias_proteinas <- proteinas_totales * 4  # 1 gramo de proteína = 4 kcal
+
+# Establecer el porcentaje de calorías de grasas (30% como ejemplo)
+porcentaje_grasas <- 0.3
+
+# Calcular calorías de grasas
+calorias_grasas <- calorias_objetivo * porcentaje_grasas
+
+# Calcular gramos de grasas
+grasas_totales <- calorias_grasas / 9  # 1 gramo de grasa = 9 kcal
+
+# Calcular calorías de carbohidratos restantes
+calorias_carbohidratos <- calorias_objetivo - calorias_proteinas - calorias_grasas
+
+# Calcular gramos de carbohidratos
+carbohidratos_totales <- calorias_carbohidratos / 4  # 1 gramo de carbohidrato = 4 kcal
+
+cat("Para un objetivo de", objetivo, "y un GET de", calorias_objetivo, "calorías al día:\n")
+cat("Proteínas:", proteinas_totales, "gramos al día\n")
+cat("Grasas:", grasas_totales, "gramos al día\n")
+cat("Carbohidratos:", carbohidratos_totales, "gramos al día\n")
+```
+
+```{r}
+# Cargar la librería necesaria
+library(dplyr)
+
+numeros_aleatorios <- sample(1:dim(df_nutricional)[1], size = 50)
+
+# Definir los objetivos de calorías, grasas, carbohidratos y proteínas
+objetivos <- c(
+    kcal_objetivo = calorias_objetivo,
+    grasa_objetivo = grasas_totales,
+    hidratos_objetivo = carbohidratos_totales,
+    proteina_objetivo = proteinas_totales
+)
+
+# Crear una función para calcular la desviación entre las recetas seleccionadas y los objetivos
+calcular_desviacion <- function(recetas, objetivos) {
+    total <- colSums(recetas)
+    desviacion <- sum((total - objetivos)^2)
+    return(desviacion)
+}
+
+# Calcular todas las combinaciones de 3 recetas posibles
+combinaciones <- combn(numeros_aleatorios, 3, simplify = FALSE)
+
+# Inicializar un data frame para guardar las combinaciones y sus desviaciones
+resultados <- data.frame(
+    recetas = I(vector("list", length(combinaciones))),
+    desviacion = numeric(length(combinaciones))
+)
+
+# Iterar sobre cada combinación de recetas
+for (i in seq_along(combinaciones)) {
+    # Seleccionar las recetas correspondientes a la combinación
+    recetas_seleccionadas <- df_nutricional[combinaciones[[i]], c("Kcal", "Grasa", "Carbohidratos", "Proteinas")]
+    
+    # Calcular la desviación respecto a los objetivos
+    desviacion <- calcular_desviacion(recetas_seleccionadas, objetivos)
+    
+    # Guardar la combinación de recetas y su desviación en el data frame
+    resultados$recetas[[i]] <- combinaciones[[i]]
+    resultados$desviacion[i] <- desviacion
+}
+
+
+# Ordenar las combinaciones por desviación (menor desviación primero)
+resultados <- resultados %>%
+    arrange(desviacion)
+
+# Seleccionar las 100 mejores combinaciones
+mejores_combinaciones <- resultados %>%
+    head(100)
+
+# Imprimir las 100 mejores combinaciones
+print(mejores_combinaciones)
+
+```
+
+
+```{r}
+# Crear un data.frame con ejercicios físicos
+
+ejercicios <- data.frame(
+  Nombre = c(
+    "Sentadillas", "Flexiones", "Correr", "Plancha", "Salto de cuerda",
+    "Estocadas", "Curl de bíceps", "Zancadas", "Burpees", "Remo con mancuerna",
+    "Prensa de pierna", "Elevación lateral", "Curl de piernas", "Fondos",
+    "Flexiones de tríceps", "Peso muerto", "Elevación de piernas", "Salto de caja",
+    "Remo invertido", "Extensión de tríceps", "Press de banca", "Press de hombros",
+    "Salto en estrella", "Press militar", "Puente de glúteos", "Marcha del granjero",
+    "Tijeras laterales", "Tijeras frontales", "Zancadas caminando", "Rotaciones de torso",
+    "Press inclinado", "Curl con barra", "Escalador de montaña", "Crunch",
+    "Superman", "Sentadillas búlgaras", "Elevación de talones", "Remo con barra",
+    "Levantamiento de piernas colgado", "Elevación frontal", "Remo con banda de resistencia",
+    "Crunch oblicuo", "Remo con TRX", "Press Arnold", "Salto en tijera", "Plancha lateral",
+    "Remo de pie", "Kickboxing", "Levantamiento lateral con polea", "Tijeras de patada",
+    "Remo sentado con polea", "Press de banca inclinado", "Sentadillas con salto",
+    "Levantamiento de rodillas", "Salto en largo", "Estocadas inversas", "Sentadillas con salto de rodillas",
+    "Levantamiento lateral con mancuernas", "Salto en tijera lateral", "Sentadillas con salto hacia adelante",
+    "Estiramientos de hombros", "Trote", "Caminata", "Zancadas con salto",
+    "Salto en cruz"
+  ),
+  Ejecucion = c(
+    "De pie, baja como si te sentaras, luego vuelve a subir.",
+    "Boca abajo, baja el cuerpo hasta cerca del suelo y luego sube.",
+    "Corre a un ritmo constante.",
+    "Boca abajo, con los antebrazos y pies en el suelo, mantén el cuerpo recto.",
+    "Salta la cuerda de forma continua.",
+    "Da un paso hacia adelante, baja la rodilla trasera, y regresa.",
+    "De pie, levanta una pesa hacia el hombro y baja lentamente.",
+    "Da un paso largo hacia adelante, baja hasta ángulos de 90 grados.",
+    "Desde de pie, agáchate, haz una flexión y salta.",
+    "De pie, inclínate hacia adelante y rema una mancuerna.",
+    "Empuja las piernas contra una plataforma con peso.",
+    "Levanta pesas hacia afuera desde los lados del cuerpo.",
+    "Desde sentado, dobla las piernas hacia atrás.",
+    "Baja los codos para levantar tu cuerpo.",
+    "De pie, baja el cuerpo hacia atrás y levántalo.",
+    "Levanta una barra con pesas desde el suelo.",
+    "Acostado, levanta las piernas hacia arriba.",
+    "Salta sobre una plataforma elevada.",
+    "Sujeta una barra con peso y levántala.",
+    "Extiende los brazos hacia atrás con pesas.",
+    "Acuéstate y empuja pesas hacia arriba.",
+    "Levanta pesas por encima de la cabeza.",
+    "Salta abriendo y cerrando las piernas y brazos.",
+    "Levanta pesas por encima de la cabeza desde un banco.",
+    "Acuéstate con los pies en el suelo y levanta las caderas.",
+    "Camina sosteniendo pesas en ambas manos.",
+    "Da un paso lateral y baja el cuerpo.",
+    "Desde una posición de pie, da pasos hacia adelante alternando piernas.",
+    "Da pasos largos hacia adelante mientras mantienes el cuerpo recto.",
+    "Agáchate y rota el torso de lado a lado con peso.",
+    "Levanta una barra con pesas desde una inclinación.",
+    "Levanta una barra de pesas hacia los hombros.",
+    "Corre en el lugar, alternando rodillas hacia arriba.",
+    "Acuéstate y levanta las rodillas hacia el pecho.",
+    "Acuéstate boca abajo y levanta brazos y piernas.",
+    "Apoya un pie en una banca y baja el otro hacia abajo.",
+    "Eleva los talones hacia arriba mientras estás de pie.",
+    "Inclínate hacia adelante y rema una barra con pesas.",
+    "Levanta las piernas hacia arriba desde una barra.",
+    "Levanta pesas hacia adelante desde los lados del cuerpo.",
+    "Tira de una banda de resistencia hacia el pecho.",
+    "Levanta el torso girando hacia un lado.",
+    "Sujeta una banda TRX y rema hacia ti.",
+    "Levanta pesas por encima de la cabeza desde una posición neutral.",
+    "Salta alternando piernas hacia adelante y hacia atrás.",
+    "Levanta el cuerpo de lado apoyándote en un codo.",
+    "Tira de una cuerda hacia el pecho.",
+    "Practica movimientos de kickboxing (patadas y puñetazos).",
+    "Tira de una polea desde abajo hacia los lados del cuerpo.",
+    "Salta y patea hacia adelante.",
+    "Tira de una cuerda hacia tu pecho mientras estás sentado.",
+    "Levanta pesas hacia arriba desde un banco inclinado.",
+    "Realiza una sentadilla y salta hacia arriba con fuerza.",
+    "Levanta las rodillas hacia arriba mientras te desplazas.",
+    "Salta hacia adelante desde una posición estática.",
+    "Da un paso hacia atrás y baja la rodilla, luego regresa.",
+    "Realiza una sentadilla y salta hacia arriba con las rodillas hacia el pecho.",
+    "Levanta pesas hacia los lados desde una posición de pie.",
+    "Salta hacia los lados alternando piernas.",
+    "Realiza una sentadilla y salta hacia adelante.",
+    "Estira los hombros hacia los lados y hacia arriba.",
+    "Corre a un ritmo moderado.",
+    "Camina a un ritmo moderado.",
+    "Da un paso largo hacia adelante y salta con fuerza.",
+    "Salta abriendo y cerrando brazos y piernas."
+
+  ),
+  Tiempo = c(
+    "10-15 repeticiones", "10-15 repeticiones", "30 minutos", "30-60 segundos",
+    "10-15 minutos", "10 repeticiones por pierna", "10-15 repeticiones por brazo",
+    "10 repeticiones por pierna", "10-15 repeticiones", "10-15 repeticiones por brazo",
+    "10-15 repeticiones", "10-15 repeticiones por brazo", "10-15 repeticiones",
+    "10 repeticiones", "10-15 repeticiones", "10-15 repeticiones", "10 repeticiones",
+    "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones",
+    "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones por pierna",
+    "10-15 repeticiones por pierna", "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones",
+    "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones",
+    "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones por pierna", "10-15 repeticiones por pierna",
+    "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones por pierna", "10-15 repeticiones",
+    "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones",
+    "10-15 repeticiones por pierna", "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones",
+    "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones",
+    "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones",
+    "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones",
+    "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones", "10-15 repeticiones"
+  ),
+  Kcal = c(
+    80, 85, 350, 25, 150, 60, 45, 65, 95, 60,
+    110, 35, 80, 50, 40, 120, 55, 90, 70, 80,
+    140, 100, 115, 110, 60, 75, 80, 65, 75, 110,
+    125, 50, 300, 100, 65, 75, 65, 75, 110, 120,
+    65, 90, 115, 125, 50, 55, 80, 90, 70, 100,
+    100, 90, 125, 65, 75, 60, 80, 90, 70, 75,
+    80, 65, 90, 70, 100
+  ),
+  Objetivo = c(
+    "Ganar masa muscular", "Ganar masa muscular", "Perder peso",
+    "Ganar resistencia", "Perder peso", "Ganar masa muscular",
+    "Ganar masa muscular", "Ganar masa muscular", "Perder peso",
+    "Ganar masa muscular", "Ganar masa muscular", "Ganar masa muscular",
+    "Ganar masa muscular", "Ganar masa muscular", "Ganar masa muscular",
+    "Ganar masa muscular", "Ganar masa muscular", "Ganar resistencia",
+    "Ganar masa muscular", "Ganar masa muscular", "Ganar masa muscular",
+    "Ganar masa muscular", "Perder peso", "Ganar masa muscular",
+    "Ganar masa muscular", "Ganar masa muscular", "Perder peso",
+    "Ganar masa muscular", "Ganar masa muscular", "Ganar masa muscular",
+    "Ganar masa muscular", "Ganar masa muscular", "Ganar masa muscular",
+    "Ganar masa muscular", "Ganar masa muscular", "Ganar masa muscular",
+    "Ganar masa muscular", "Ganar masa muscular", "Ganar masa muscular",
+    "Ganar masa muscular", "Ganar masa muscular", "Ganar masa muscular",
+    "Ganar masa muscular", "Ganar masa muscular", "Ganar masa muscular",
+    "Perder peso", "Ganar masa muscular", "Ganar masa muscular",
+    "Ganar masa muscular", "Perder peso", "Ganar masa muscular",
+    "Ganar masa muscular", "Ganar masa muscular", "Perder peso",
+    "Perder peso", "Perder peso", "Perder peso", "Perder peso",
+    "Perder peso", "Perder peso", "Perder peso", "Perder peso",
+    "Perder peso", "Perder peso", "Perder peso"
+  )
+)
+
+# Imprimir el data.frame creado
+print(ejercicios)
+
+
+```
+
+
+```{r}
+obj <- "Perder peso"
+numeros_aleatorios <- sample(1:dim(ejercicios[ejercicios$Objetivo == obj | ejercicios$Objetivo == "Ganar resistencia",])[1], size = 3)
+ejercicios[ejercicios$Objetivo == obj | ejercicios$Objetivo == "Ganar resistencia",][numeros_aleatorios,]
+```
+
