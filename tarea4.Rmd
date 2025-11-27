@@ -1,0 +1,485 @@
+---
+title: 'Tarea 4: Crimen en Cape Town'
+author: "Amparo Galvez Vilar"
+date: "2024-12-07"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+---
+
+# Carga de librerias
+
+```{r, message = FALSE, warning = FALSE}
+library(sf)
+library(dplyr)
+library(spdep)
+library(ggplot2)
+library(spatialreg) 
+```
+
+# Lectura de datos
+
+```{r}
+datos = st_read('./CapeTown.gpkg', layer='LatticeDataR', quiet=T)
+```
+
+## Estructura y características generales de los datos
+
+Dado que no disponemos del número de personas que viven en cada barrio y no tenemos acceso a la oficina de estadística, podemos asumir que el número de habitantes en cada barrio es el total de habitantes de Ciudad del Cabo dividido entre 777, que es el número de barrios. Esta suposición se basa en la falta de información específica sobre la población de cada barrio.
+
+```{r}
+# Explorar las variables
+# Ver la estructura de los datos
+str(datos)
+
+# Resumen general de los datos
+summary(datos)
+```
+
+El conjunto de datos contiene un total de 777 observaciones y 26 variables, configurándose como un conjunto de datos espaciales (sf). Estas variables incluyen tipos diversos como numéricas, categóricas y geométricas, donde la columna geom contiene polígonos.
+
+La variable que estamos observando es de tipo flotante (CRIME), lo cual es inesperado, ya que lo esperado sería un número entero. Este valor flotante podría corresponder a una media de varios años. Para simplificar, redondeamos este valor a un entero. Así, podemos continuar con un análisis más manejable y consistente.
+
+```{r}
+# Redondear la variable CRIME a enteros
+datos$CRIME <- round(datos$CRIME)
+```
+
+Si una variable tiene muchos NAs, lo mejor es descartarla porque su información es muy deficiente.
+
+Variables con muchos valores faltantes:
+
+-   OFFICIAL_SUBURB: 2.96% de valores faltantes.
+
+-   NUM_RES_PROP: 18.28% de valores faltantes.
+
+-   MED_LAND_EXTENT.m2: 18.28% de valores faltantes.
+
+-   MED_TOT_BLD_AREA.m2: 18.28% de valores faltantes.
+
+-   GV2015VAL: 18.28% de valores faltantes.
+
+Dado que no se cuenta con la posibilidad de imputar valores faltantes, es recomendable eliminar la variable GV2015VAL del análisis para asegurar la calidad del estudio. Las variables con un alto porcentaje de valores faltantes, como GV2015VAL, pueden introducir sesgos y afectar la integridad de los resultados. Además, mantener variables con información incompleta podría conducir a conclusiones erróneas y reducir la confiabilidad del análisis. Por lo tanto, eliminarlas permitirá centrarse en las variables con datos completos y precisos, mejorando la robustez y la precisión del estudio.
+
+```{r}
+# Descartar variables con muchos valores faltantes 
+datos <- datos %>% select(-OFFICIAL_SUBURB, -NUM_RES_PROP, -MED_LAND_EXTENT.m2, -MED_TOT_BLD_AREA.m2, -GV2015VAL)
+```
+
+```{r}
+str(datos)
+summary(datos)
+```
+
+Se han mantenido las variables clave para el análisis, especialmente aquellas relacionadas con la variable de interés, CRIME. La eliminación de las variables con muchos valores faltantes ha mejorado la calidad general del conjunto de datos. Esto asegura que el análisis se base en datos completos y más confiables, lo cual es crucial para evitar sesgos y errores en los resultados.
+
+Por otro lado, las variables numéricas restantes, como SHAPE_Leng, SHAPE_Area y AVMEDINC, presentan una buena dispersión y un rango de valores amplio. Esta característica es útil para un análisis detallado. Asimismo, variables como OFC_SBRB_N, STA, STAD, PREA, PREL y WARD proporcionan una clasificación que puede ser útil en análisis más detallados o segmentaciones.
+
+Al mantener variables críticas y eliminar aquellas con muchos valores faltantes, el análisis se vuelve más robusto y preciso. Esto permitirá identificar patrones y relaciones significativas. En conclusión, este proceso de limpieza y reducción de datos es esencial para obtener resultados válidos y confiables en el análisis, especialmente cuando se trata de variables complejas y relaciones múltiples.
+
+# Análisis descriptivo
+
+Los barrios se clasificaron en dos categorías: alta criminalidad y baja criminalidad. Los barrios con más de 500 crímenes se consideraron de alta criminalidad, mientras que aquellos con 500 o menos crímenes se consideraron de baja criminalidad. Para realizar esta clasificación, se añadió una nueva columna binaria llamada "Criminality", la cual especifica si un barrio pertenece a la categoría de alta o baja criminalidad.
+
+Esta columna permite realizar análisis diferenciados por nivel de criminalidad y explorar cómo se comportan las variables en cada grupo.
+
+```{r}
+# Crear la columna de clasificación de criminalidad
+datos <- datos %>%
+  mutate(Criminality = ifelse(CRIME > 500, "Alta", "Baja"))
+head(datos)
+```
+
+A continuación, se calcularon estadísticas descriptivas (media y mediana) para las variables seleccionadas, agrupando los barrios según su nivel de criminalidad. Estas estadísticas ofrecen una visión general de cómo las características de los barrios varían entre los dos grupos:
+
+-   CRIME: Número de crímenes.
+
+-   AVMEDINC: Renta familiar promedio.
+
+-   AVAPREArea: Superficie promedio de los barrios.
+
+-   AVBACH: Proporción de habitantes con título universitario.
+
+El código utilizado para realizar este análisis es el siguiente:
+
+```{r}
+# Calcular estadísticas descriptivas por grupo de criminalidad
+stats <- datos %>%
+  group_by(Criminality) %>%
+  summarise(
+    # Estadísticas de CRIME
+    mean_CRIME = mean(CRIME, na.rm = TRUE),
+    median_CRIME = median(CRIME, na.rm = TRUE),
+    # Estadísticas de AVMEDINC (Renta familiar promedio)
+    mean_AVMEDINC = mean(AVMEDINC, na.rm = TRUE),
+    median_AVMEDINC = median(AVMEDINC, na.rm = TRUE),
+    # Estadísticas de AVAPREArea (Superficie promedio de los barrios)
+    mean_AVAPREArea = mean(AVAPREArea, na.rm = TRUE),
+    median_AVAPREArea = median(AVAPREArea, na.rm = TRUE),
+    # Estadísticas de AVBACH (Proporción de titulados universitarios)
+    mean_AVBACH = mean(AVBACH, na.rm = TRUE),
+    median_AVBACH = median(AVBACH, na.rm = TRUE)
+  )
+# Mostrar las estadísticas descriptivas
+print(stats)
+```
+
+El análisis descriptivo reveló diferencias significativas entre los barrios con alta y baja criminalidad:
+
+1.  CRIME (Número de crímenes):
+
+    -   Los barrios con alta criminalidad tienen un promedio de 857.84 crímenes, comparado con los 349.18 en los barrios con baja criminalidad.
+
+    -   La diferencia en las medianas (866 frente a 361) refuerza esta segmentación.
+
+2.  AVMEDINC (Renta familiar promedio):
+
+    -   Los barrios de alta criminalidad tienen una renta promedio más elevada (139,510.5) que los de baja criminalidad (101,241.7).
+
+    -   Este patrón puede sugerir una dinámica socioeconómica inversa a la esperada, que requeriría un análisis adicional.
+
+3.  AVAPREArea (Superficie promedio de los barrios):
+
+    -   La superficie promedio es mayor en barrios de alta criminalidad (86,314,785) en comparación con los de baja criminalidad (34,633,538).
+
+    -   Esto puede estar relacionado con factores como densidad poblacional o planificación urbana.
+
+4.  AVBACH (Proporción de habitantes con título universitario):
+
+    -   La proporción de titulados universitarios es mayor en barrios de alta criminalidad (842.35) que en los de baja criminalidad (641.36).
+
+    -   Este hallazgo es interesante y plantea preguntas sobre las relaciones entre educación y criminalidad.
+
+### Conclusiones
+
+El análisis descriptivo destaca diferencias importantes entre los barrios según su nivel de criminalidad. Las variables asociadas a renta, superficie y nivel educativo muestran patrones que merecen un análisis más profundo. En particular, la relación positiva entre renta y criminalidad podría ser indicativa de factores contextuales únicos en la región estudiada.
+
+## Visualización
+
+En esta sección se exploran visualmente las diferencias entre los barrios con alta y baja criminalidad en relación con las variables clave del análisis.
+
+### Superficie Media de los Barrios (AVAPREArea)
+
+```{r}
+ggplot(datos, aes(x = Criminality, y = AVAPREArea, fill = Criminality)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(
+    title = "Superficie Media según el Nivel de Criminalidad",
+    x = "Criminalidad",
+    y = "Superficie Media de los Barrios (AVAPREArea)"
+  )
+```
+
+Los barrios con alta criminalidad tienen una mediana de superficie mayor en comparación con los de baja criminalidad. Además, la mayor dispersión observada en estos barrios sugiere que incluyen tanto zonas extensas como áreas más pequeñas. Este resultado podría indicar que los barrios más grandes son más difíciles de vigilar, lo que facilita la comisión de delitos, especialmente en áreas menos vigiladas o periféricas.
+
+### Renta Familiar Media (AVMEDINC)
+
+```{r}
+ggplot(datos, aes(x = Criminality, y = AVMEDINC, fill = Criminality)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(
+    title = "Renta Familiar Media según el Nivel de Criminalidad",
+    x = "Criminalidad",
+    y = "Renta Familiar Media (AVMEDINC)"
+  )
+
+```
+
+La media y la mediana de la renta familiar son más altas en los barrios con alta criminalidad. Esto sugiere que los delitos económicos, como los robos a casas de alto valor, podrían estar relacionados con estos barrios. Por otro lado, en los barrios con baja criminalidad, la renta promedio es significativamente más baja, lo que podría estar asociado a factores como un menor nivel de urbanización o un acceso limitado a oportunidades económicas.
+
+### Proporción de Titulados Universitarios (AVBACH)
+
+```{r}
+ggplot(datos, aes(x = Criminality, y = AVBACH, fill = Criminality)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(
+    title = "Proporción de Titulados Universitarios según el Nivel de Criminalidad",
+    x = "Criminalidad",
+    y = "Proporción de Titulados Universitarios (AVBACH)"
+  )
+
+```
+
+Los barrios con alta criminalidad tienen una proporción más alta de titulados universitarios en comparación con los de baja criminalidad. Esto sugiere que, a pesar de los mayores niveles de criminalidad, estos barrios podrían tener un mayor acceso a la educación o concentrar una población más formada. En contraste, los barrios con baja criminalidad presentan una proporción menor de titulados universitarios, lo que podría estar vinculado a limitaciones en el acceso educativo o socioeconómico.
+
+### Conclusiones
+
+La visualización de los resultados ha permitido identificar patrones importantes en los barrios con alta y baja criminalidad. En los barrios con alta criminalidad, se observa una mayor variabilidad en la valoración de propiedades y en la superficie de los barrios. Además, una proporción más alta de titulados universitarios y mayores niveles de renta sugieren un contexto socioeconómico complejo.
+
+Por otro lado, los barrios con baja criminalidad presentan una menor dispersión en las variables clave, lo que podría reflejar comunidades más homogéneas en términos de tamaño, renta y nivel educativo.
+
+En cuanto a las implicaciones socioeconómicas, la relación entre criminalidad y variables como renta y educación plantea la necesidad de un análisis más profundo para entender los factores subyacentes. Es crucial considerar el impacto de la desigualdad económica y las dinámicas urbanas en los niveles de criminalidad.
+
+# Modelo estadístico
+
+Se utiliza un modelo de regresión de Poisson, adecuado para datos de conteo, y modelos espaciales para capturar dependencias espaciales entre los barrios. Estos análisis permiten predecir las probabilidades de alta criminalidad y evaluar el impacto de las variables seleccionadas.
+
+### Modelo de Regresión de Poisson
+
+El modelo de regresión de Poisson es especialmente útil para modelar datos de conteo, como el número de crímenes residenciales. En este caso, se ajusta un modelo de Poisson utilizando variables socioeconómicas y geográficas previamente identificadas como relevantes.
+
+El modelo ajustado es el siguiente:
+
+```{r}
+# Ajuste del modelo de Poisson
+modelo_poisson <- glm(
+  CRIME ~ AVAPREArea + AVMEDINC + AVBACH,
+  family = poisson,
+  data = datos
+)
+
+# Resumen del modelo
+summary(modelo_poisson)
+
+```
+
+La interpretación de los resultados revela varios aspectos importantes:
+
+El valor estimado del intercepto indica la tasa de criminalidad basal en ausencia de las variables predictoras. Dado que el modelo utiliza una escala logarítmica, este valor representa la log-tasa base de criminalidad.
+
+En cuanto a AVAPREArea, la relación positiva sugiere que un aumento en la superficie media del barrio está asociado con un incremento en el número de crímenes. Este hallazgo puede estar relacionado con la facilidad de perpetrar crímenes en áreas más grandes, menos densas o con menor vigilancia.
+
+AVMEDINC, que representa la renta familiar media, también muestra una relación positiva con la criminalidad. Esto sugiere que los barrios con ingresos más altos pueden ser más susceptibles a ciertos tipos de crímenes, como robos, debido a la percepción de mayor riqueza.
+
+Finalmente, el número promedio de titulados universitarios (AVBACH) está asociado positivamente con el número de crímenes. Esto podría reflejar la coexistencia de alta criminalidad en barrios desarrollados con altos niveles educativos, donde se observan factores socioeconómicos mixtos.
+
+Todas las variables incluidas son estadísticamente significativas con p-valores menores a 0.001, lo que respalda su relevancia en la predicción del número de crímenes.
+
+### Mapa de Predicciones del Modelo Poisson
+
+A continuación, se utilizó el modelo de regresión de Poisson ajustado previamente para predecir el número esperado de crímenes residenciales en los barrios de Ciudad del Cabo. Estas predicciones se representaron espacialmente para identificar las áreas con mayor probabilidad de criminalidad.
+
+Generación de Predicciones:
+
+-   Las predicciones del modelo se calcularon con la función `predict()` en R, utilizando el tipo de predicción response, para obtener valores en la escala original (número esperado de crímenes residenciales).
+
+-   Las predicciones se escalaron al rango [0, 1] para una visualización más efectiva en el mapa.
+
+```{r}
+# Predicciones del modelo Poisson
+predictions_poisson <- predict(modelo_poisson, type = "response")
+
+# Escalar las predicciones al rango [0, 1]
+predictions_poisson <- scales::rescale(predictions_poisson)
+
+# Añadir las predicciones al dataset
+datos$predictions_poisson <- predictions_poisson
+
+# Crear el mapa de predicciones
+ggplot(data = datos) +
+  geom_sf(aes(fill = predictions_poisson)) +
+  scale_fill_viridis_c(option = "plasma", name = "Predicciones Poisson") +
+  theme_minimal() +
+  labs(
+    title = "Predicción de Crímenes Residenciales - Modelo Poisson",
+    subtitle = "Mapa de riesgo de criminalidad en los barrios de Ciudad del Cabo"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+```
+
+El mapa generado utiliza un esquema de colores de la escala viridis (plasma), que proporciona una representación intuitiva de las predicciones. En este esquema, los colores más oscuros indican zonas con un mayor número esperado de crímenes residenciales, mientras que los colores más claros representan áreas con un menor riesgo de criminalidad según las predicciones del modelo.
+
+La interpretación de este mapa revela que las áreas con mayor riesgo de criminalidad (colores oscuros) suelen coincidir con barrios que tienen características relacionadas con altos niveles de renta, mayor superficie y una proporción más alta de personas con títulos universitarios, como se observó en el análisis del modelo. Estas áreas podrían ser prioritarias para implementar medidas de seguridad adicionales o estrategias específicas para reducir el riesgo de criminalidad.
+
+Por otro lado, los barrios con menor criminalidad predicha (colores claros) pueden indicar zonas donde los niveles de riesgo son más bajos. Esto podría estar asociado con factores como menor densidad poblacional, ingresos más bajos o una vigilancia más efectiva. En estas áreas, los recursos de seguridad podrían ser redistribuidos de manera más eficiente para optimizar la prevención del crimen en toda la región.
+
+### Mapa de Residuos del Modelo Poisson
+
+Además del mapa de predicciones, es crucial evaluar la calidad del ajuste del modelo. Para ello, generamos un mapa de residuos del modelo de Poisson. Los residuos reflejan la diferencia entre los valores observados de crímenes residenciales y los valores predichos por el modelo.
+
+```{r}
+# Cálculo de residuos de desviancia
+datos$resid_poisson <- residuals(modelo_poisson, type = "deviance")
+
+# Visualización del mapa de residuos
+ggplot(data = datos) +
+  geom_sf(aes(fill = resid_poisson), lwd = 0.1) +
+  scale_fill_gradient2(
+    low = "blue", 
+    mid = "white", 
+    high = "red",
+    midpoint = 0, 
+    name = "Residuos"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Residuos del Modelo de Poisson",
+    subtitle = "Evaluación del ajuste del modelo en los barrios de Ciudad del Cabo"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+```
+
+El mapa de residuos utiliza una escala de colores gradiente para diferenciar diversas áreas según su nivel de criminalidad. Los valores negativos (azul) indican que los crímenes observados son menores de lo que predice el modelo. Estos barrios pueden representar áreas con un comportamiento criminal atípico que no está bien explicado por las variables del modelo. Por otro lado, los valores cercanos a cero (blanco) sugieren que el modelo ajusta razonablemente bien en estos barrios. Finalmente, los valores positivos (rojo) muestran que los crímenes observados son mayores de lo esperado, lo cual sugiere que el modelo subestima los niveles de criminalidad en estas áreas.
+
+En términos de interpretación, las áreas con sobreestimación (azul) tienen menos crímenes de los que predice el modelo. Estas zonas podrían tener características que reducen la criminalidad pero que no están capturadas por las variables explicativas del modelo. Por otro lado, las áreas con subestimación (rojo) presentan niveles de criminalidad más altos de los predichos. Esto podría indicar factores no incluidos en el modelo que aumentan el riesgo, como eventos sociales específicos, deficiencias en la vigilancia, o características urbanas no capturadas. Finalmente, en los barrios con buen ajuste (blanco), el modelo describe correctamente la criminalidad observada, lo que refuerza su utilidad en estas áreas.
+
+# Incorporación de estructura espacial
+
+## Evaluación de la Dependencia Espacial: Índice de Moran's I
+
+Para confirmar la existencia de autocorrelación espacial en los datos de criminalidad, se utilizó Moran's I, una medida estándar que evalúa si los valores observados en áreas cercanas son similares o disímiles.
+
+Se validaron los polígonos y se calcularon los centroides de los barrios para corregir posibles errores y definir vecinos según la proximidad. A continuación, se calcularon los vecinos dentro de un radio de 2000 metros y se creó una matriz de pesos espaciales para modelar la interacción entre barrios. Finalmente, se calculó el índice de Moran's I para la variable de crímenes residenciales (CRIME), lo que permitió evaluar la autocorrelación espacial de la criminalidad en el área de estudio.
+
+```{r}
+# Convertimos los polígonos a puntos (centroides)
+# Corregimos los polígonos que puedan ser problemáticos
+datos <- st_make_valid(datos)
+centroid <- st_centroid(datos)
+
+# Definimos vecinos dentro de una distancia
+nb <- dnearneigh(centroid, 0, 2000)
+
+lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+
+# Calculamos Moran's I para la variable CRIME
+moran_test <- moran.test(datos$CRIME, lw)
+print(moran_test)
+```
+
+Los resultados del análisis espacial mostraron un índice de Moran's I de 0.761 y un p-valor menor que 2.2e-16. Esto permite rechazar la hipótesis nula de ausencia de autocorrelación espacial. Por lo tanto, se concluye que existe una fuerte autocorrelación espacial positiva, indicando que los barrios cercanos tienden a tener niveles similares de criminalidad.
+
+```{r}
+local_moran <- localmoran(datos$CRIME, lw, zero.policy = TRUE)
+datos$moran_local <- as.numeric(local_moran[, 1])
+
+ggplot(data = datos) +
+  geom_sf(aes(fill = moran_local), lwd = 0.1) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, name = "Moran's I Local") +
+  labs(
+    title = "Autocorrelación Espacial Local de los Crímenes - Moran's I"
+  ) +
+  theme_minimal()
+```
+
+Las áreas rojas en el mapa representan barrios con valores de criminalidad similares a los de sus vecinos. Esto indica que estos barrios comparten características comunes y presentan patrones de criminalidad coherentes con sus alrededores. Por otro lado, las áreas azules destacan los barrios cuyos valores de criminalidad difieren significativamente de los de sus vecinos, sugiriendo la presencia de factores específicos que afectan la criminalidad de manera distinta en estos lugares.
+
+## Ajuste de un Modelo Autorregresivo Espacial: Modelo CAR
+
+Dado que se detectó una dependencia espacial significativa, se ajustó un modelo autorregresivo condicional (CAR). Este modelo captura la influencia de los barrios vecinos de manera explícita, permitiendo un análisis más preciso.
+
+Para evitar redundancia y mejorar la precisión del análisis, se opta por excluir AVAPREArea, dejando las variables AVMEDINC y AVBACH como predictoras principales en el modelo autorregresivo espacial CAR.
+
+```{r}
+car_model <- lagsarlm(
+  CRIME ~ AVMEDINC + AVBACH,
+  data = datos,
+  listw = lw,
+  type = "CAR",
+  zero.policy = TRUE
+)
+summary(car_model)
+```
+
+El modelo CAR (Conditional Autoregressive Model) muestra una fuerte dependencia espacial con un valor de Rho de 0.8357, lo que indica que los barrios cercanos tienden a tener niveles similares de criminalidad. Entre las variables incluidas, AVMEDINC (ingreso promedio) tiene un coeficiente positivo significativo, sugiriendo que barrios con mayores ingresos tienden a experimentar más crímenes residenciales. Esto podría estar relacionado con la concentración de bienes de valor en áreas de mayor poder adquisitivo. Por otro lado, AVBACH (porcentaje de la población con título de bachillerato) no muestra una relación significativa con la criminalidad, lo que sugiere que este factor no influye de manera clara en los patrones de crimen en este contexto.
+
+El ajuste del modelo es adecuado, con un AIC de 10025, lo que indica que el modelo CAR es más eficiente que un modelo lineal simple. Además, la prueba de autocorrelación de residuos confirma la existencia de autocorrelación significativa, lo que valida la necesidad de incluir dependencias espaciales en el análisis. En resumen, este modelo destaca la importancia de la estructura espacial en los datos y muestra que el ingreso promedio es un factor relevante en la predicción de crímenes residenciales, mientras que el nivel educativo no parece influir de manera significativa en este caso.
+
+## Comparación: Diferencias entre Modelos
+
+El análisis de Moran's I y el modelo CAR confirman que los crímenes residenciales están influenciados por los barrios vecinos, validando la importancia de incorporar la estructura espacial en el modelo. El modelo CAR muestra un mejor ajuste al incluir la dependencia espacial, identificando que el valor de las propiedades y el ingreso medio son variables clave para explicar los patrones de criminalidad. Aunque las predicciones de los modelos son similares en general, el modelo CAR se ajusta mejor en áreas donde la dependencia espacial es más fuerte. Estas conclusiones subrayan la relevancia de considerar la estructura espacial y las características socioeconómicas al analizar y predecir la criminalidad en diferentes barrios.
+
+# Análisis Específico de Alta Criminalidad
+
+El objetivo de este análisis es clasificar los barrios de Cape Town según su nivel de criminalidad y construir un modelo logístico que prediga la probabilidad de alta criminalidad, tomando en cuenta variables socioeconómicas y geográficas. Además, calcularemos las probabilidades predichas de alta criminalidad para cada barrio y las visualizaremos en un mapa, lo que facilitará la identificación de las áreas de alto riesgo.
+
+## Clasificación de Barrios
+
+Para comenzar, clasificamos los barrios en dos grupos: aquellos con alta criminalidad (más de 500 crímenes) y aquellos con baja criminalidad (menos de 500 crímenes). Convertimos la variable **`CRIME`** en una variable binaria denominada **`Criminality`**, donde asignamos el valor 1 a los barrios con más de 500 crímenes y 0 a aquellos con menos de 500.
+
+```{r}
+datos <- datos %>%
+  mutate(Criminality = ifelse(CRIME > 500, 1, 0))
+head(datos)
+```
+
+Esto resulta en una variable **`Criminality`** que clasifica los barrios según el número de crímenes, lo que nos permitirá proceder con el modelo logístico para predecir la probabilidad de alta criminalidad en los barrios.
+
+## Modelo Logístico
+
+A continuación, ajustamos un modelo de regresión logística para predecir la probabilidad de que un barrio tenga alta criminalidad, utilizando como variables explicativas **`AVAPREArea`** (área promedio de las propiedades), **`AVMEDINC`** (ingreso promedio), y **`AVBACH`** (porcentaje de la población con educación secundaria). Los resultados del modelo indican que todas las variables explicativas son estadísticamente significativas, con **`p`-valores** menores a 0.05.
+
+```{r}
+modelo_logistico <- glm(Criminality ~ AVAPREArea + AVMEDINC + AVBACH, family = binomial, data = datos)
+summary(modelo_logistico)
+
+```
+
+Los coeficientes obtenidos para el modelo son los siguientes:
+
+-   **Intercepto**: -0.486 (p-valor = 0.00391). Este valor es significativo, lo que indica que el modelo tiene un intercepto estadísticamente diferente de cero.
+
+-   **AVAPREArea**: 1.342e-08 (p-valor = 2.36e-12). Este coeficiente es altamente significativo, lo que sugiere que el área promedio (probablemente medida en metros cuadrados o alguna unidad relacionada) tiene un efecto positivo sobre la probabilidad de alta criminalidad. Es decir, a mayor área promedio, mayor es la probabilidad de alta criminalidad.
+
+-   **AVMEDINC**: 1.779e-06 (p-valor = 0.14840). Este valor no es significativo (p \> 0.05), lo que sugiere que el ingreso medio (`AVMEDINC`) no tiene un impacto estadísticamente relevante en la probabilidad de alta criminalidad en este modelo.
+
+-   **AVBACH**: 5.235e-04 (p-valor = 0.00433). Este coeficiente es significativo, lo que indica que el nivel educativo promedio en el barrio (probablemente medido a través de algún indicador de años de escolaridad o porcentaje de la población con estudios superiores) tiene un efecto positivo sobre la probabilidad de alta criminalidad.
+
+Los análisis realizados indican que los barrios con un área más grande (AVAPREArea) tienen una mayor probabilidad de alta criminalidad. Esto sugiere que los barrios más grandes, posiblemente debido a la presencia de zonas menos desarrolladas o áreas con menos control social, tienen un mayor riesgo de criminalidad.
+
+En cuanto a la renta familiar media (AVMEDINC), aunque esta variable no resulta significativa en el modelo, podría implicar que los ingresos medios no son el principal factor detrás de los patrones de criminalidad en este caso. Esto señala la necesidad de una exploración más profunda para entender mejor las dinámicas específicas de los barrios considerados en este estudio.
+
+Por otro lado, un mayor nivel educativo (AVBACH) parece estar relacionado con una mayor probabilidad de alta criminalidad. Aunque esto podría parecer contraintuitivo, una posible explicación es que en zonas con un alto nivel educativo también pueden existir desigualdades económicas que fomenten ciertos tipos de delitos, como el fraude o los delitos económicos. Este patrón merece una investigación adicional para comprender completamente sus implicaciones.
+
+En resumen, el modelo sugiere que los barrios más grandes y aquellos con mayores niveles de educación tienen una mayor probabilidad de experimentar alta criminalidad, mientras que la renta familiar media no parece ser un factor determinante en este contexto. Estos hallazgos subrayan la importancia de considerar una variedad de factores socioeconómicos al analizar los patrones de criminalidad.
+
+## Predicción de Alta Criminalidad
+
+Una vez ajustado el modelo, calculamos las probabilidades predichas de alta criminalidad para cada barrio. Estas probabilidades nos permiten identificar de manera cuantitativa las áreas más vulnerables a tener una alta tasa de criminalidad.
+
+```{r}
+datos$pred_prob <- predict(modelo_logistico, type = "response")
+head(datos)
+```
+
+Las probabilidades predichas (pred_prob) calculadas para cada barrio se basan en el modelo ajustado y representan la posibilidad de que un barrio experimente alta criminalidad, definida como tener más de 500 crímenes. Valores cercanos a 1 indican una alta probabilidad de que el barrio tenga una criminalidad alta, mientras que valores cercanos a 0 sugieren una baja probabilidad de alta criminalidad. Esta predicción ayuda a identificar barrios que podrían requerir mayor atención en términos de seguridad y recursos para mitigar los riesgos de criminalidad elevada.
+
+## Mapa de Predicciones
+
+Para visualizar mejor los resultados, se genera un mapa que muestra las probabilidades predichas de alta criminalidad en cada barrio de Cape Town. Los barrios con tonos más oscuros indican una mayor probabilidad de alta criminalidad, mientras que los barrios con tonos más claros tienen una probabilidad baja.
+
+```{r}
+ggplot(data = datos) +
+  geom_sf(aes(fill = pred_prob)) +
+  scale_fill_viridis_c(option = "plasma", name = "Probabilidad") +
+  theme_minimal() +
+  labs(
+    title = "Probabilidad de Alta Criminalidad en Cape Town"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+```
+
+Este mapa visualiza cómo las características socioeconómicas y geográficas de los barrios afectan la probabilidad de alta criminalidad, permitiendo identificar de manera clara las zonas con mayor riesgo. Las áreas con mayor probabilidad de alta criminalidad se destacan en colores más oscuros, lo que puede guiar decisiones en políticas de seguridad y planificación urbana.
+
+# Conclusión
+
+El análisis de la criminalidad en los barrios de Cape Town revela importantes patrones espaciales y socioeconómicos que afectan los niveles de criminalidad en la ciudad. A través de un enfoque integral que combina técnicas de modelización espacial y estadística, se ha logrado identificar áreas con altos niveles de criminalidad, así como factores clave que influyen en estos patrones.
+
+En primer lugar, el uso de un mapa de residuos con escala de colores gradiente ha permitido visualizar las áreas donde el modelo subestima o sobreestima la criminalidad. Los valores negativos (azules) sugieren barrios con menos crímenes de los predichos, mientras que los valores positivos (rojos) indican áreas con niveles de criminalidad superiores a los esperados. Este análisis ha permitido identificar zonas atípicas que presentan comportamientos criminales complejos no completamente explicados por las variables del modelo.
+
+La incorporación de la estructura espacial mediante el cálculo del índice de Moran's I ha revelado una fuerte autocorrelación espacial positiva, lo que implica que los barrios cercanos tienden a tener niveles de criminalidad similares. Esto subraya la importancia de considerar las interacciones entre barrios en el análisis de la criminalidad, ya que los factores espaciales juegan un papel crucial en la dinámica de los crímenes residenciales.
+
+El modelo autorregresivo espacial CAR ha demostrado ser una herramienta efectiva para ajustar la influencia de los barrios vecinos, identificando que el ingreso promedio (AVMEDINC) tiene una relación positiva con la criminalidad. Aunque la variable educativa (AVBACH) no mostró un impacto significativo, el modelo resaltó que la estructura espacial debe ser incorporada para obtener predicciones más precisas.
+
+El análisis logístico complementario ha permitido clasificar los barrios en función de su probabilidad de alta criminalidad. La clasificación binaria basada en el número de crímenes identificó que los barrios con mayores áreas promedio (AVAPREArea) y niveles educativos más altos tienen una mayor probabilidad de alta criminalidad. Este hallazgo, aunque aparentemente contraintuitivo en el caso de la educación, sugiere que factores como las desigualdades económicas pueden influir en ciertos tipos de delitos, como el fraude o los delitos económicos, especialmente en áreas con mayor nivel educativo.
+
+Finalmente, el modelo ha permitido generar un mapa de probabilidades predichas de alta criminalidad, proporcionando una herramienta visual útil para identificar las zonas de mayor riesgo. Este mapa puede ser clave para la toma de decisiones en términos de políticas de seguridad y asignación de recursos, permitiendo a las autoridades focalizar esfuerzos en los barrios más vulnerables.
+
+En conclusión, el análisis revela que la criminalidad en Cape Town está influenciada tanto por factores socioeconómicos como por la estructura espacial de los barrios. Los modelos utilizados han demostrado la relevancia de integrar las características espaciales y socioeconómicas en la predicción y comprensión de los patrones de criminalidad, abriendo la puerta a futuras investigaciones que puedan profundizar en la naturaleza de estos fenómenos y ayudar a diseñar intervenciones más efectivas.

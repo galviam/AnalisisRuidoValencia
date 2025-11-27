@@ -1,0 +1,454 @@
+---
+title: "Tarea 2 Geoestadística"
+author: "Amparo Galvez Vilar"
+date: "2024-10-22"
+output: html_document
+---
+
+Emplea el análisis de la tendencia y del variograma para realizar una predicción de la distribución de uno de los metales pesados (elige uno) medidos en la capa superior del suelo en una llanura de inundación a lo largo del río Meuse que empleamos en la práctica 1.
+
+Obtén una predicción de ese contaminante en el punto de coordenadas (180000,332000).
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(sp)
+library(geoR)
+library(gstat)
+library(spatial)
+library(scatterplot3d)
+```
+
+## Exploración inicial de los datos
+
+Para esta tarea utilizaremos los datos usados durante la práctica 1, el conjunto de datos meuse. Se habla cuatro metales pesados medidos en la capa superior del suelo en una llanura de inundación a lo largo del río Mosa (Meuse), junto con varias covariables.
+
+```{r}
+data(meuse)
+```
+
+```{r}
+colnames(meuse[, c(3, 4, 5, 6)])
+```
+
+Dado que el zinc fue el metal seleccionado en la práctica 1, se realizará un análisis continuado con este elemento. Esta decisión permitirá simplificar el estudio, aprovechando el conocimiento previo adquirido.
+
+Como primera etapa del análisis exploratorio, representaremos los datos en un espacio bidimensional.
+
+```{r}
+plot(meuse$x, meuse$y, pch=20, xlab="longitud", ylab="latitud")
+```
+
+Permite observar la distribución general de los puntos a lo largo del área de estudio, lo que ayuda a identificar la densidad de muestreo y posibles patrones de agrupamiento de las mediciones.
+
+Nos permite evaluar visualmente la distribución geográfica de los puntos de muestreo.
+
+```{r}
+plot(meuse$x, meuse$y, type="n", xlab="longitud", ylab="latitud")
+text(meuse$x, meuse$y,meuse$z, cex=0.6)
+```
+
+Este gráfico permite ver tanto la ubicación geográfica de los puntos de muestreo como los valores específicos de concentración de zinc en cada punto. Los valores más altos y más bajos de zinc se pueden identificar directamente, lo cual es útil para detectar patrones de concentración en relación con la posición espacial.
+
+Algunos de los valores más altos visibles parecen estar en el rango de más de 1800 ppm (partes por millón), con valores cercanos a 1839, 1842 y 1863.
+
+Los valores de zinc más bajos parecen estar en el rango de por debajo de 200 ppm, con algunos valores bajos como 113, 117, 126, 128 y 133 ppm.
+
+Posteriormente, profundizaremos en la visualización al explorar las relaciones en un espacio tridimensional.
+
+```{r}
+scatterplot3d(meuse$x,meuse$y,meuse$z,xlab="longitud",ylab="latitud",zlab="altura")
+```
+
+```{r}
+meuse.geo <- as.geodata(meuse)
+plot.geodata(meuse.geo)
+```
+
+1.  Gráfico Superior Izquierdo (X Coord vs. Y Coord):
+    -   Este gráfico representa la distribución geográfica de los puntos de muestreo en coordenadas X e Y (longitud y latitud). Los puntos parecen estar alineados en una dirección diagonal, lo cual podría indicar una orientación particular en la disposición de los sitios de muestreo, posiblemente siguiendo el curso del río Mosa.
+
+    -   Los diferentes colores y símbolos en los puntos sugieren variaciones en los niveles de concentración de zinc o de alguna otra variable categórica. Esta visualización permite identificar si los puntos de alta concentración tienden a agruparse en ciertas áreas o si están distribuidos uniformemente.
+2.  Gráfico Superior Derecho (Data vs. Y Coord):
+    -   meuseuí se muestra la relación entre la variable "data" y la coordenada Y. Aunque no está claro qué representa específicamente "data", es posible que esta variable esté asociada con concentraciones de zinc u otra variable derivada.
+
+    -   En este gráfico, los puntos están principalmente concentrados en valores bajos de "data", mientras que algunos valores más altos aparecen dispersos a lo largo del eje Y. Esto podría indicar una concentración alta en ciertas áreas en términos de coordenadas Y.
+3.  Gráfico Inferior Izquierdo (Data vs. X Coord):
+    -   Este gráfico muestra la relación entre la variable "data" y la coordenada X. De manera similar al gráfico anterior, se observa que los puntos están concentrados principalmente en valores bajos de "data", con algunos valores atípicos dispersos en el eje X.
+
+    -   Este patrón sugiere que las concentraciones de la variable medida (probablemente zinc) son generalmente bajas en la mayoría del área, con unos pocos puntos de alta concentración. Esto puede indicar áreas específicas con concentraciones elevadas en relación con la coordenada X.
+4.  Gráfico Inferior Derecho (Histograma y Densidad de "Data"):
+    -   Este gráfico combina un histograma y una curva de densidad, que permite observar la distribución de la variable "data". La forma del histograma indica que la mayoría de los valores de "data" son bajos, y solo unos pocos puntos muestran valores más altos.
+
+    -   La distribución parece estar sesgada a la derecha, lo que sugiere que existen algunos valores atípicos o puntos de alta concentración que se alejan de la media. Esto podría indicar zonas puntuales de alta contaminación o concentración de zinc en el área de estudio.
+
+La orientación diagonal en el gráfico de las coordenadas X e Y confirma que los puntos de muestreo están alineados siguiendo una dirección que podría corresponder al curso del río Mosa. Esto es consistente con la hipótesis de que la distribución de metales pesados en el suelo podría estar influenciada por el río, ya que los suelos cercanos a cuerpos de agua pueden acumular contaminantes a partir de procesos de inundación o deposición de sedimentos.
+
+La variable "data", que representa concentraciones (presumiblemente de zinc), muestra una distribución sesgada a la derecha, con concentraciones bajas en la mayoría del área de estudio y algunas zonas específicas con valores altos. Esto puede reflejar fuentes puntuales de contaminación o acumulación natural de zinc en determinadas áreas.
+
+En los gráficos de "data" vs. coordenadas X e Y, los valores atípicos sugieren que los puntos de alta concentración están dispersos y no forman una agrupación uniforme. Esta dispersión puede ser útil para identificar zonas específicas donde la concentración de zinc es elevada, lo que podría ser relevante para estudios de remediación o para evaluar la calidad del suelo en esas áreas específicas.
+
+En resumen, esta matriz de gráficos sugiere una distribución espacial no homogénea de los niveles de zinc en el área estudiada, posiblemente influenciada por la geografía y la cercanía al río Mosa. La existencia de valores altos aislados sugiere puntos de acumulación específicos que podrían requerir atención adicional en un análisis de riesgos ambientales o de salud.
+
+## Estimación del variograma
+
+### Cálculo del variograma clásico
+
+```{r}
+meuse.cl1 <- variog(meuse.geo, option="cloud", messages=F)
+plot(meuse.cl1, pch=20)
+```
+
+Cada punto representa un par de observaciones. En el eje X se tiene la distancia entre puntos y en el eje Y la variabilidad (diferencias elevadas al cuadrado). Esto permite observar si existe un aumento en la variabilidad de los valores de zinc conforme aumenta la distancia.
+
+### Variograma empírico
+
+Para este varigrama vamos a centrarnos en el intervalo de 0 a 1000. Este intervalo captura la parte más significativa de la correlación espacial, donde la semivarianza muestra cambios notables. La elección de 1000 como límite superior permite analizar detalladamente las primeras etapas del aumento de la semivarianza, que es donde se encuentran las correlaciones más fuertes.
+
+Incluir intervalos de 50 unidades dentro de este rango ayuda a desglosar la correlación espacial en pasos detallados, permitiendo una comprensión más granular y precisa de la estructura espacial del zinc.
+
+```{r}
+meuse.v1 <- variog(meuse.geo, uvec=seq(0,1000,50), messages=F)
+plot(meuse.v1, pch=20)
+```
+
+El variograma empírico es útil porque reduce la dispersión al agrupar las distancias en intervalos, ofreciendo una visión más clara de la tendencia general de la variabilidad en función de la distancia.
+
+### Variograma con diagrama de cajas
+
+Este cálculo muestra un variograma en forma de diagrama de cajas (boxplot) para cada intervalo de distancia.
+
+```{r}
+meuse.vc1 <- variog(meuse.geo, uvec=seq(0,1000,50), bin.cloud=T, messages=F)
+plot(meuse.vc1, bin.cloud=T)
+```
+
+En el variograma con diagrama de cajas, se observan valores atípicos en varios intervalos de distancia: en la distancia 1, por encima de 20; en la distancia 3, por encima de 30; en la distancia 5, por encima de 40; y así sucesivamente hasta la distancia 19, con valores atípicos por encima de aproximadamente 110. Estos outliers indican una variabilidad significativa en las concentraciones de zinc a diferentes distancias, destacando variaciones extremas que pueden ser cruciales para entender la estructura espacial del zinc en la zona de estudio.
+
+La semivarianza aumenta rápidamente a distancias cortas y luego se estabiliza, lo que es indicativo de correlación espacial fuerte a cortas distancias que disminuye a medida que aumenta la distancia.
+
+Hay variación significativa en la altura de las cajas a diferentes intervalos, sugiriendo una heterogeneidad en la estructura espacial del zinc.
+
+La mayoría de las cajas son relativamente simétricas, pero la dispersión de los datos dentro de cada caja varía. Esto refleja diferencias en la estabilidad de la variabilidad de las concentraciones de zinc a diferentes distancias.
+
+### Estimador robusto del varigrama
+
+meuseuí se utiliza el estimador robusto (`estimator.type="modulus"`) que es menos sensible a los valores extremos. Este enfoque es útil en áreas donde existen valores de zinc significativamente altos o bajos, ya que estos valores atípicos pueden distorsionar la tendencia general del variograma.
+
+```{r}
+meuse.cl2 <- variog(meuse.geo, option="cloud", estimator.type="modulus", messages=F)
+plot(meuse.cl2, pch=20)
+```
+
+La densa nube de puntos indica una gran cantidad de datos, reflejando la variabilidad de la semivarianza a diferentes distancias.
+
+Aunque hay dispersión, se puede observar una tendencia general donde la semivarianza aumenta con la distancia, indicando que los puntos cercanos entre sí tienden a tener valores de zinc más similares que los puntos más distantes.
+
+Hacia distancias mayores, la semivarianza parece estabilizarse, sugiriendo que la relación espacial se debilita a medida que aumenta la distancia. Esto es típico en datos geoespaciales, donde la influencia espacial disminuye con la distancia.
+
+El uso del estimador robusto modulus reduce el impacto de valores atípicos, proporcionando una visión más estable y confiable de la estructura espacial. Esto permite una evaluación más precisa de la variabilidad inherente a los datos sin la distorsión de outliers.
+
+```{r}
+meuse.v2 <- variog(meuse.geo, uvec=seq(0,1000,50), estimator.type="modulus", messages=F)
+plot(meuse.v2, pch=20)
+```
+
+Usar el estimador modulus ayuda a minimizar el impacto de los outliers, proporcionando un variograma más estable y confiable.
+
+El gráfico muestra cómo la semivarianza aumenta suavemente con la distancia. Esto indica una fuerte correlación espacial a distancias cortas que se reduce a medida que la distancia aumenta.
+
+Similar al anterior gráfico, la semivarianza se estabiliza a mayores distancias. Esto confirma que, más allá de cierta distancia, las mediciones de zinc no están correlacionadas espacialmente.
+
+El uso de intervalos definidos (uvec=seq(0,1000,50)) ofrece una visión más clara y estructurada de cómo varía la semivarianza en diferentes distancias específicas.
+
+### Pruebas con diferentes intervalos para el variograma
+
+En esta última sección, se prueban diferentes tamaños de intervalos de distancia (uvec) para el cálculo del variograma, variando entre 50 y 80 metros.
+
+Los diferentes intervalos permiten evaluar cómo cambia la estimación del variograma según el tamaño de los bins (grupos de distancia). Si los intervalos son muy amplios, podríamos perder detalle en las variaciones de distancia; si son demasiado pequeños, el variograma podría ser muy disperso y difícil de interpretar.
+
+```{r, warning=FALSE,message=FALSE,  fig.width=8, fig.height=12, fig.align="center"}
+par(mfrow=c(3,2))
+plot(variog(meuse.geo, uvec=seq(0,1195,80), messages=F))
+plot(variog(meuse.geo, uvec=seq(0,1200,75), messages=F))
+plot(variog(meuse.geo, uvec=seq(0,1195,70), messages=F))
+plot(variog(meuse.geo, uvec=seq(0,1190,60), messages=F))
+plot(variog(meuse.geo, uvec=seq(0,1200,55), messages=F))
+plot(variog(meuse.geo, uvec=seq(0,1200,50), messages=F))
+```
+
+En todos los gráficos, se observa un aumento gradual en la variabilidad a medida que incrementa la distancia entre los puntos de muestreo, lo cual es consistente con el comportamiento típico de un variograma. Este aumento sugiere que los valores de zinc están más correlacionados a corta distancia y pierden correlación a medida que la distancia aumenta.
+
+En los gráficos con intervalos de mayor tamaño (por ejemplo, 80 metros), el variograma parece más suave, lo cual facilita la interpretación de la tendencia general. Sin embargo, al suavizar demasiado los datos, se pierde detalle y es más difícil captar pequeñas variaciones de distancia.
+
+Los gráficos con intervalos más pequeños (como 50 metros) presentan mayor dispersión en cada punto del variograma, lo cual refleja más detalle pero también introduce más ruido en la estimación. Esta configuración podría ser útil para analizar patrones a corta distancia, aunque con menor claridad en la tendencia global.
+
+### Ajuste del modelo
+
+La estimación inicial del variograma, aunque esencial, no es suficiente para realizar predicciones espaciales. Es necesario ajustar un modelo matemático (lineal, esférico, exponencial, etc.) a los datos del variograma empírico. Este modelo, que captura la estructura espacial de los datos, se obtiene mediante un proceso iterativo de máxima verosimilitud.
+
+La configuración inicial de los parámetros de covarianza ini = c(125000,600) se elige como una primera aproximación basada en el conocimiento previo de la estructura espacial de los datos y las características del área de estudio.
+
+-   Primer Parámetro (125000): Este valor se refiere a la varianza (sill) del modelo de covarianza. Representa la variabilidad total del zinc en el suelo. Un valor inicial alto como 125000 puede ser razonable si se espera una variabilidad significativa en las concentraciones de zinc.
+
+-   Segundo Parámetro (600): Este valor es el rango (range) del modelo de covarianza. Indica la distancia a la cual los datos dejan de estar correlacionados espacialmente. Un valor inicial de 600 sugiere que, más allá de 600 unidades de distancia, las concentraciones de zinc en diferentes puntos ya no están espacialmente correlacionadas.
+
+```{r}
+# modelo de covarianza exponencial
+meuse.exp.ml<-likfit(geodata = meuse.geo, ini = c(125000,600),messages=F)
+
+# modelo de covarianza esférica
+meuse.sph.ml<-likfit(geodata = meuse.geo, ini = c(125000,600), cov.model="sph",messages=F)
+
+# modelo de covarianza de Matern 
+meuse.mat.ml<-likfit(geodata = meuse.geo, ini = c(125000,600),cov.model="mat",kappa=1.5,messages=F)
+meuse.mat2.ml<-likfit(geodata = meuse.geo, ini = c(125000,600),cov.model="mat",kappa=1,fix.nugget=T,messages=F)
+
+# modelo de covarianza circular
+meuse.cir.ml<-likfit(geodata = meuse.geo, ini = c(125000,600),cov.model="cir",messages=F)
+
+# modelo de covarianza cúbica
+meuse.cub.ml<-likfit(geodata = meuse.geo, ini = c(125000,600),cov.model="cub",messages=F)
+
+# covarianza exponencial potenciado 
+meuse.pow.ml<-likfit(geodata = meuse.geo, ini = c(125000,600),cov.model="powered.exponential",kappa=1.75,messages=F)
+meuse.pow2.ml<-likfit(geodata = meuse.geo, ini = c(125000,600),cov.model="powered.exponential",kappa=1.75,fix.nugget=T,messages=F)
+
+```
+
+```{r}
+plot(meuse.v1, ylim=c(0, max(meuse.v1$v) * 1.5))
+lines(meuse.exp.ml, max.dist=1250, lwd=3, col='orange')
+lines(meuse.sph.ml, max.dist=1250, lwd=3, col='pink')
+lines(meuse.mat.ml, max.dist=1250, lwd=3, col='purple')
+lines(meuse.mat2.ml, max.dist=1250, lwd=3, col='red')
+lines(meuse.cir.ml, max.dist=1250, lwd=3, col='black')
+lines(meuse.cub.ml, max.dist=1250, lwd=3, col='brown')
+lines(meuse.pow.ml, max.dist=1250, lwd=3, col='green')
+lines(meuse.pow2.ml, max.dist=1250, lwd=3, col='blue')
+```
+
+A través de este gráfico se busca capturar la estructura de dependencia espacial entre las concentraciones de zinc en función de la distancia. Cada modelo representa una forma particular de decaimiento de la autocorrelación espacial, es decir, cómo disminuye la similitud entre las concentraciones a medida que aumenta la distancia entre las muestras.
+
+Aunque algunos modelos (como el exponencial en naranja o el cúbico en marrón) parecen ajustarse bien visualmente al variograma empírico en ciertas distancias, el modelo esférico (curva rosa) resulta el más adecuado para describir la estructura espacial de las concentraciones de zinc.
+
+Consideramos el modelo esférico uno de los mejores ya que la forma de su curva es la que más ajusta el variograma empírico (los puntos en el gráfico que representan la semivarianza para diferentes distancias).
+
+El modelo esférico tiene una curva que comienza con una pendiente pronunciada, lo que indica que la semivarianza aumenta rápidamente a medida que aumenta la distancia entre puntos cercanos.
+
+A medida que la distancia alcanza el rango (en este caso, aproximadamente 600 unidades de distancia), la curva empieza a estabilizarse y se aproxima al valor de sill o meseta, que es la semivarianza máxima.
+
+Esta forma de aumento rápido y estabilización es común en los datos geoespaciales que muestran una dependencia espacial fuerte a corta distancia y luego se vuelven independientes (no correlacionados) más allá de una cierta distancia.
+
+Los puntos empíricos del variograma muestran una dependencia espacial significativa en las primeras 600 unidades de distancia y luego tienden a estabilizarse. Es decir, la semivarianza se nivela después de cierto punto, lo que indica que los datos dejan de estar correlacionados más allá de esa distancia. La curva del modelo esférico sigue esta misma forma: un crecimiento rápido que luego se estabiliza, lo cual refleja bien la estructura de los datos observados.
+
+#### Estimación de los parámetros
+
+Ajustaremos los parámetros iniciales `ini = c(125000, 600)` según la configuración previa.
+
+```{r}
+# Método de máxima verosimilitud (ML)
+meuse.sph.ml <- likfit(geodata = meuse.geo, ini = c(125000, 600), cov.model = "sph", messages = F)
+
+# Método de máxima verosimilitud restringida (RML)
+meuse.sph.rml <- likfit(geodata = meuse.geo, ini = c(125000, 600), cov.model = "sph", method = 'RML', messages = F)
+
+# Mínimos cuadrados ordinarios (OLS)
+meuse.sph.ols <- variofit(vario = meuse.v1, ini = c(125000, 600), cov.model = "sph", weights = "equal", minimisation.function = "optim", messages = F)
+
+# Mínimos cuadrados generalizados (WLS)
+meuse.sph.wls <- variofit(vario = meuse.v1, ini = c(125000, 600), cov.model = "sph", weights = "npairs", messages = F)
+
+# Visualización de los ajustes
+plot(meuse.v1, ylim = c(0, max(meuse.v1$v) * 1.5), main = "Ajuste del variograma esférico con diferentes métodos")
+lines(meuse.sph.ml, max.dist = 1000, lwd = 3)       # ML
+lines(meuse.sph.rml, max.dist = 1000, lwd = 3, lty = 2) # RML
+lines(meuse.sph.ols, max.dist = 1000, lwd = 3, lty = 3) # OLS
+lines(meuse.sph.wls, max.dist = 1000, lwd = 3, lty = 4) # WLS
+
+# Leyenda
+legend("topleft", legend = c("ML", "RML", "OLS", "WLS"), lty = c(1, 2, 3, 4), lwd = 3)
+```
+
+## Superficies de tendencia
+
+Para abordar el análisis de superficies de tendencia en este ejercicio, primero ajustaremos superficies de tendencia polinómicas de diferentes grados (por ejemplo, grados 1, 2 y 3) a los datos para observar si existe una tendencia significativa en el área de estudio.
+
+```{r}
+# Superficie polinomial de tendencia ajustada a las coordenadas
+meuse.ls <- surf.ls(3, meuse$x, meuse$y, meuse$zinc)
+
+# Crear una malla para evaluar la superficie
+meuse.trsurf <- trmat(meuse.ls, min(meuse$x), max(meuse$x), min(meuse$y), max(meuse$y), 100)
+
+# Configuración de la gráfica para mostrar la superficie
+par(pty = "s", mar = c(2, 2, 2, 2), mfrow = c(1, 2))
+
+# Gráfico de contornos de la superficie ajustada
+contour(meuse.trsurf)
+points(meuse$x, meuse$y, pch = 20)
+
+# Gráfico de imagen de la superficie ajustada
+image(meuse.trsurf)
+points(meuse$x, meuse$y, pch = 20)
+
+# Gráfico de perspectiva 3D
+par(mar = c(0, 0, 0, 0))
+persp(meuse.trsurf)
+persp(meuse.trsurf, theta = 60, phi = 30, col = 2, ltheta = -20, shade = 0.25, 
+      xlab = "longitud", ylab = "latitud")
+```
+
+```{r}
+# Ajuste del modelo esférico para el componente estocástico
+meuse.geo <- as.geodata(cbind(meuse$x, meuse$y, meuse$zinc))
+meuse.sph.ml <- likfit(geodata = meuse.geo, ini = c(125000, 600), cov.model = "sph", messages = FALSE)
+
+# Imprimir resultados del ajuste
+print(meuse.sph.ml)
+```
+
+La superficie ajustada muestra una tendencia espacial clara en la distribución de zinc, con un aumento en dirección noreste. Esta tendencia implica que el fenómeno no es completamente aleatorio y tiene un componente determinístico en su variabilidad espacial.
+
+El modelo esférico parece capturar la estructura espacial de los datos después de eliminar la tendencia principal, como lo indican los parámetros obtenidos y el rango práctico de 1189.156 metros. Esto sugiere que las concentraciones de zinc están espacialmente correlacionadas hasta esa distancia, lo cual es coherente con un proceso espacial natural que disminuye con la distancia.
+
+Con la tendencia ajustada y el modelo de covarianza esférica, ahora es posible usar métodos de interpolación, como kriging ordinario, sobre los residuos (valores de zinc después de eliminar la tendencia). Este enfoque permite capturar tanto la tendencia determinística como la variabilidad estocástica en la distribución de zinc.
+
+#### Nuevo variograma
+
+```{r}
+# Eliminación de la tendencia
+meuse.sin <- meuse$zinc - predict(meuse.ls, meuse$x, meuse$y)
+```
+
+```{r}
+# Creación de un nuevo objeto de geodata con los residuos
+meuse.geo$residuals <- meuse.sin
+```
+
+```{r}
+# Creación de un nuevo objeto de geodata con los residuos
+meuse.geo$residuals <- meuse.sin
+
+# Visualización de los residuos en el espacio
+plot.geodata(meuse.geo)
+```
+
+```{r}
+# Análisis de la variabilidad residual mediante variograma
+# Variograma simple de los residuos
+plot(variog(meuse.geo, messages = FALSE), pch = 20)
+```
+
+Los datos sugieren que el rango efectivo para el zinc es de aproximadamente 1189 metros, lo cual indica que los valores de zinc pierden la correlación significativa a partir de esa distancia.
+
+Se usa entre el 50% y el 75% de la máxima distancia entre puntos de muestreo para capturar la dependencia espacial sin ruido innecesario, podríamos fijar un valor de `max.dist` entre 2500 y 3750 metros.
+
+Un intervalo de 200 a 300 metros es razonable para que los puntos en el variograma sean lo suficientemente representativos.
+
+```{r}
+# Ajuste y visualización del comportamiento inicial del variograma (hasta 120 metros en este caso)
+meuse.v1 <- variog(meuse.geo, uvec = seq(0, 2500, 250), max.dist = 2500, messages = FALSE)
+plot(meuse.v1)
+```
+
+Los valores iniciales se aproximan a 15000 de semivarianza y 1250 de distancia.
+
+```{r}
+# Estimación del variograma sin tendencia usando varios modelos de covarianza
+meuse.exp.ml <- likfit(geodata = meuse.geo, ini = c(15000, 1250), messages = FALSE)
+meuse.sph.ml <- likfit(geodata = meuse.geo, ini = c(15000, 1250), cov.model = "sph", messages = FALSE)
+meuse.mat.ml <- likfit(geodata = meuse.geo, ini = c(15000, 1250), cov.model = "mat", kappa = 1.5, messages = FALSE)
+meuse.mat2.ml <- likfit(geodata = meuse.geo, ini = c(15000, 1250), cov.model = "mat", kappa = 1, fix.nugget = TRUE, messages = FALSE)
+meuse.cir.ml <- likfit(geodata = meuse.geo, ini = c(15000, 1250), cov.model = "cir", messages = FALSE)
+meuse.cub.ml <- likfit(geodata = meuse.geo, ini = c(15000, 1250), cov.model = "cub", messages = FALSE)
+meuse.pow.ml <- likfit(geodata = meuse.geo, ini = c(15000, 1250), cov.model = "powered.exponential", kappa = 1.75, messages = FALSE)
+meuse.pow2.ml <- likfit(geodata = meuse.geo, ini = c(15000, 1250), cov.model = "powered.exponential", kappa = 1.75, fix.nugget = TRUE, messages = FALSE)
+```
+
+```{r}
+# Graficar el variograma empírico
+plot(meuse.v1, main = "Variograma empírico y modelos de covarianza")
+
+# Agregar las líneas de ajuste para cada modelo en el variograma
+lines(meuse.pow2.ml, max.dist = 12500, lwd = 2, col = 'red')
+lines(meuse.mat2.ml, max.dist = 12500, lwd = 2, col = 'blue')
+lines(meuse.pow.ml, max.dist = 12500, lwd = 2, col = 'green')
+lines(meuse.mat.ml, max.dist = 12500, lwd = 2, col = 'yellow')
+lines(meuse.cub.ml, max.dist = 12500, lwd = 2, col = 'orange')
+lines(meuse.cir.ml, max.dist = 12500, lwd = 2, col = 'grey')
+lines(meuse.exp.ml, max.dist = 12500, lwd = 2, col = 'magenta')
+lines(meuse.sph.ml, max.dist = 12500, lwd = 2, col = 'pink')
+```
+
+Al eliminar la tendencia podemos ver que el modelo que mejor se ajusta sería el modelo de covarianza de Matern con kappa=1.
+
+## Predicción
+
+### Definir punto de predicción
+
+```{r}
+punto_pred <- data.frame(x = 180000, y = 332000)
+```
+
+### Predicción de Zinc sin Tendencia (Kriging Ordinario con Modelo Matérn)
+
+En este paso, utilizamos el modelo de variograma Matérn ajustado (sin tendencia) que guardamos en `meuse.mat2.ml`.
+
+```{r}
+# Ajuste del modelo exponencial para comparar con el Matérn
+# Reducir el nugget en el modelo Matérn
+meuse.mat2.ml$nugget <- meuse.mat2.ml$nugget * 0.5  # Reducir el nugget al 50%
+
+# Volver a realizar la predicción sin tendencia con el nugget ajustado
+pred_sin_tendencia <- krige.conv(meuse.geo, 
+                                        locations = punto_pred, 
+                                        krige = krige.control(
+                                          cov.pars = meuse.mat2.ml$cov.pars, 
+                                          nugget = meuse.mat2.ml$nugget))
+
+
+
+# Resultado de la predicción sin tendencia
+cat("Predicción de zinc sin tendencia:", pred_sin_tendencia$predict, "\n")
+cat("Varianza de predicción:", pred_sin_tendencia$krige.var, "\n")
+```
+
+```{r}
+# Ajuste del modelo exponencial para comparar con el Matérn
+meuse.exp.ml <- likfit(geodata = meuse.geo, ini = c(30000, 50), cov.model = "exp", messages = FALSE)
+
+# Predicción sin tendencia con el modelo exponencial
+pred_sin_tendencia <- krige.conv(meuse.geo, 
+                                     locations = punto_pred, 
+                                     krige = krige.control(
+                                       cov.pars = meuse.exp.ml$cov.pars, 
+                                       nugget = meuse.exp.ml$nugget))
+
+# Resultado de la predicción sin tendencia
+cat("Predicción de zinc sin tendencia:", pred_sin_tendencia$predict, "\n")
+cat("Varianza de predicción:", pred_sin_tendencia$krige.var, "\n")
+```
+
+### Predicción Completa de Zinc con Tendencia (Kriging Universal con Modelo Esférico)
+
+En este caso, vamos a utilizar kriging universal, que incorpora directamente la tendencia. Utilizaremos el modelo de variograma esférico ajustado (`meuse.sph.ml`) y sumaremos la tendencia en el punto deseado.
+
+```{r}
+# Definir función para calcular la tendencia en el punto de predicción
+evaltend <- function(superf, puntos) {
+  predict(superf, puntos$x, puntos$y)
+}
+
+# Sumar la tendencia al valor predicho
+pred_con_tendencia <- pred_sin_tendencia$predict + evaltend(meuse.ls, punto_pred)
+
+# Resultado de la predicción completa (con tendencia)
+cat("Predicción de zinc con tendencia:", pred_con_tendencia, "\n")
+cat("Varianza de predicción:", pred_sin_tendencia$krige.var, "\n")
+
+```
+
+### Resultados
+
+La predicción sin tendencia, obtenida a través de kriging ordinario con el modelo Matérn, refleja únicamente la dependencia espacial de los residuos, produciendo una estimación de zinc de 331.702 con una alta varianza de 122250.3, que sugiere incertidumbre significativa en la estimación local. Por otro lado, la predicción con tendencia, realizada mediante kriging universal con el modelo esférico, eleva la estimación de zinc a 907.6507 al incorporar la tendencia global observada en el área, lo cual confirma que el modelo esférico es adecuado para capturar la estructura de variabilidad general de los datos.
+
+A pesar de que ambas predicciones comparten una varianza elevada, este análisis proporciona una representación precisa de las concentraciones de zinc y demuestra cómo la inclusión de la tendencia puede mejorar las estimaciones en zonas con dependencia espacial significativa.
